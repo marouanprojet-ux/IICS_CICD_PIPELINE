@@ -3,7 +3,7 @@ import sys
 from iics_client import IICSClient
 
 def main():
-    commit_hash = os.environ.get('COMMIT_HASH')
+    commit_hash = os.environ.get('COMMITHASH')
     # Use generic names for login url and pod url, but fallbacks may vary
     # Original script used IICS_LOGIN_URL and IICS_POD_URL
     pod_url = os.environ.get('IICS_POD_URL')
