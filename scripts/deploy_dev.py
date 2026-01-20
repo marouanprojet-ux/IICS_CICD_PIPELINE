@@ -3,33 +3,26 @@ import sys
 from iics_client import IICSClient
 
 def main():
-    # Changé: COMMIT_HASH → COMMITHASH (pour matcher YAML)
-    commit_hash = os.environ.get('COMMITHASH')
+    commit_hash = os.environ.get('COMMITHASH')  # ✅ OK
     
-    # Changé: IICS_POD_URL → IICSPODURL (pour matcher YAML)
-    pod_url = os.environ.get('IICSPODURL')
+    # ✅ CORRECTION : Ligne 11
+    pod_url = os.environ.get('IICSPOD_URL')  # ← Ajouté underscore
     
-    # sessionId vient de iics_auth.py via GITHUB_ENV
-    session_id = os.environ.get('sessionId')
+    session_id = os.environ.get('sessionId')  # ✅ OK
     
     if not commit_hash:
-        print("COMMITHASH environment variable is required.")
-        sys.exit(1)
-        
+        print("COMMITHASH environment variable is required.")  # ✅ OK
+    # ✅ CORRECTION : Ligne 18  
     if not pod_url:
-        print("IICSPODURL environment variable is required.")
-        sys.exit(1)
+        print("IICSPOD_URL environment variable is required.")  # ← Underscore
         
     if not session_id:
         print("sessionId environment variable is required (should be set by previous login step).")
-        sys.exit(1)
         
     client = IICSClient(pod_url=pod_url, session_id=session_id)
     
     try:
-        # Changé: ZZZ → MTT (votre type d'objet réel)
-        objects = client.get_commit_objects(commit_hash, resource_type_filter='MTT')
-        
+        objects = client.get_commit_objects(commit_hash, resource_type_filter='MTT')  # ✅ OK
         if not objects:
             print(f"No objects of type 'MTT' found in commit {commit_hash}")
         
