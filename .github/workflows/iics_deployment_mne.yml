@@ -2,13 +2,11 @@ name: IDMC Déploiement DEV vers UAT
 
 on:
   push:
-    tags:
-      - 'deploy*'
-      - 'à déployer*'
+    tags: ['deploy*', 'à déployer*']
   workflow_dispatch:
     inputs:
       commit_hash:
-        description: "Commit/Tag iic_demo à déployer"
+        description: "Commit/Tag iic_demo"
         type: string
         default: "dev"
 
@@ -22,71 +20,59 @@ jobs:
     name: Test DEV
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout scripts CI/CD
-        uses: actions/checkout@v4
-      
-      - name: Checkout iic_demo content
+      - uses: actions/checkout@v4
+      - name: Checkout iic_demo
         uses: actions/checkout@v4
         with:
           repository: marouanprojet-ux/iic_demo
           ref: ${{ inputs.commit_hash || github.ref_name || 'dev' }}
           path: iic_demo
-      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-      
-      - name: Install dependencies
+      - name: Install deps
         run: pip install requests
-      
       - name: Auth DEV
         env:
           IICS_USERNAME: ${{ secrets.IICS_DEV_USERNAME }}
           IICS_PASSWORD: ${{ secrets.IICS_DEV_PASSWORD }}
           IICSPOD_URL: ${{ env.IICS_DEV_POD_URL }}
           COMMITHASH: ${{ inputs.commit_hash || github.ref_name || 'dev' }}
-        run: python iics_auth.py
-      
+        run: python scripts/iics_auth.py
       - name: Deploy & Test DEV
         env:
           IICSPOD_URL: ${{ env.IICS_DEV_POD_URL }}
           COMMITHASH: ${{ inputs.commit_hash || github.ref_name || 'dev' }}
-        run: python deploy_dev.py
+        run: python scripts/deploy_dev.py
 
   deploy-uat:
     name: Promo UAT
     needs: deploy-dev
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout scripts CI/CD
-        uses: actions/checkout@v4
-      
-      - name: Checkout iic_demo content
+      - uses: actions/checkout@v4
+      - name: Checkout iic_demo
         uses: actions/checkout@v4
         with:
           repository: marouanprojet-ux/iic_demo
           ref: ${{ inputs.commit_hash || github.ref_name || 'dev' }}
           path: iic_demo
-      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-      
-      - name: Install dependencies
+      - name: Install deps
         run: pip install requests
-      
       - name: Auth UAT
         env:
           UAT_IICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
           UAT_IICS_PASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
           IICSPOD_URL: ${{ env.IICS_UAT_POD_URL }}
           UATCOMMITHASH: ${{ inputs.commit_hash || github.ref_name || 'dev' }}
-        run: python iics_auth.py
-      
+        run: python scripts/iics_auth.py
       - name: Deploy & Test UAT
         env:
           IICSPOD_URL: ${{ env.IICS_UAT_POD_URL }}
           UATCOMMITHASH: ${{ inputs.commit_hash || github.ref_name || 'dev' }}
-        run: python deploy_uat.py
+        run: python scripts/deploy_uat.py
