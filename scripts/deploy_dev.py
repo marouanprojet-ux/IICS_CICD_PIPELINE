@@ -39,10 +39,10 @@ def main():
     try:
         # Filter for 'ZZZ' or 'MTT' - keeping ZZZ for now per original, but should likely be MTT
         # I'll mention this in the summary that I kept it ZZZ but it should be changed.
-        objects = client.get_commit_objects(commit_hash, resource_type_filter='ZZZ')
+        objects = client.get_commit_objects(commit_hash, resource_type_filter='MTT')
         
         if not objects:
-             print(f"No objects of type 'ZZZ' found in commit {commit_hash}")
+             print(f"No objects of type 'MTT' found in commit {commit_hash}")
         
         for obj in objects:
             app_context_id = obj.get('appContextId')
