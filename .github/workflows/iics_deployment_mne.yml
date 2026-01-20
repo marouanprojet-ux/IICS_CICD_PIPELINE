@@ -1,67 +1,64 @@
-name: IICS CICD - Test DEV
+name: IICS Deployment MNE
 
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:  # Manuel
+    branches:
+      - main
+  workflow_dispatch:
     inputs:
-      tag:  # ✅ CHAMP TAG RETOURNÉ
-        description: 'Tag/commit à déployer (ex: v1.0 ou hash)'
+      iic_ref:
+        description: "Branch/tag du repo iic_demo (ex: dev, v1.2.0)"
         required: true
-        default: 'dev'
-      environment:
-        description: 'DEV/UAT'
-        required: false
-        default: 'DEV'
+        default: "dev"
+        type: string
 
 env:
   IICS_LOGIN_URL: https://dm-em.informaticacloud.com
-  IICS_DEV_POD_URL: https://dm-em.informaticacloud.com/saas
-  IICS_UAT_POD_URL: https://emw1.dm-em.informaticacloud.com/saas
+  IICS_POD_URL: https://dm-em.informaticacloud.com/saas
 
 jobs:
-  Test-DEV:
+  deploy_dev:
+    name: Deploy DEV
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'DEV' }}
+
     steps:
-    - uses: actions/checkout@v4
-      with:
-        repository: marouanprojet-ux/IICS_CICD_PIPELINE
+      - name: Checkout pipeline repo
+        uses: actions/checkout@v4
 
-    - uses: actions/checkout@v4
-      with:
-        repository: marouanprojet-ux/iic_demo
-        ref: ${{ github.event.inputs.tag || 'dev' }}  # ✅ Tag/branch input
-        path: iic_demo
+      - name: Checkout iic_demo
+        uses: actions/checkout@v4
+        with:
+          repository: marouanprojet-ux/iic_demo
+          ref: ${{ github.event.inputs.iic_ref || 'dev' }}
+          path: iic_demo
+          fetch-depth: 1
 
-    # ✅ FIX HASH iic_demo (pas pipeline)
-    - name: Get REAL iic_demo hash
-      id: hash
-      run: |
-        cd iic_demo
-        COMMIT=$(git rev-parse HEAD)
-        echo "hash=$COMMIT" >> $GITHUB_OUTPUT
+      - name: Compute commit hash from iic_demo
+        id: gethash
+        run: |
+          cd iic_demo
+          echo "COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "Commit selected: $(git rev-parse HEAD)"
 
-    - uses: actions/setup-python@v5
-      with:
-        python-version: 3.9
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
 
-    - run: pip install requests
+      - name: Install dependencies
+        run: pip install requests
 
-    - name: IICS Auth
-      env:
-        IICS_USERNAME: ${{ secrets.IICS_DEV_USERNAME }}
-        IICS_PASSWORD: ${{ secrets.IICS_DEV_PASSWORD }}
-        IICSPOD_URL: ${{ env.IICS_DEV_POD_URL }}
-        COMMITHASH: ${{ steps.hash.outputs.hash }}  # ✅ BON HASH
-      run: python scripts/iics_auth.py
+      - name: Authenticate to IICS
+        env:
+          IICS_USERNAME: ${{ secrets.IICS_DEV_USERNAME }}
+          IICS_PASSWORD: ${{ secrets.IICS_DEV_PASSWORD }}
+          IICS_LOGIN_URL: ${{ env.IICS_LOGIN_URL }}
+          IICS_POD_URL: ${{ env.IICS_POD_URL }}
+        run: python scripts/iics_auth.py
 
-    - name: Deploy DEV
-      env:
-        sessionId: ${{ env.sessionId }}
-        IICSPOD_URL: ${{ env.IICS_DEV_POD_URL }}
-        COMMITHASH: ${{ steps.hash.outputs.hash }}  # ✅ FIX 404
-      run: python scripts/deploy_dev.py
-
-    - name: Success
-      run: echo "✅ DEV Deploy OK - hash: ${{ steps.hash.outputs.hash }}"
+      - name: Deploy DEV (use iic_demo commit hash)
+        env:
+          sessionId: ${{ env.sessionId }}
+          IICS_POD_URL: ${{ env.IICS_POD_URL }}
+          COMMIT_HASH: ${{ env.COMMIT_HASH }}
+        run: python scripts/deploy_dev.py
