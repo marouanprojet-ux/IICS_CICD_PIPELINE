@@ -28,7 +28,7 @@ def main():
         client.pull_by_commit(uat_commit_hash)
         
         # 2. Get the objects from the commit to run tests
-        objects = client.get_commit_objects(uat_commit_hash, resource_type_filter='ZZZ')
+        objects = client.get_commit_objects(uat_commit_hash, resource_type_filter='MTT')
         
         # 3. test each object
         for obj in objects:
