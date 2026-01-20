@@ -1,77 +1,76 @@
-# Informatica sample adapté : Auto-tags + simple single-repo
-name: IDMC Déploiement DEV → UAT
+# Informatica sample + CROSS-REPO
+name: IDMC Déploiement DEV → UAT (iic_demo)
 
 on:
   push:
-    tags:
-      - 'deploy*'
-      - 'à déployer*'
+    tags: ['deploy*', 'à déployer*']
   workflow_dispatch:
     inputs:
       commit_hash:
-        description: "Commit/Tag à déployer"
-        type: string
-        default: "${{ github.sha }}"
+        description: "Commit/Tag iic_demo (dev/main)"
+        default: "dev"  # ← Branch dev par défaut
 
 env:
-  IICS_LOGIN_URL: https://dm-em.informaticacloud.com
-  IICS_DEV_POD_URL: https://dm-em.informaticacloud.com/saas  # Ajustez DEV pod
-  IICS_UAT_POD_URL: https://emw1.dm-em.informaticacloud.com/saas  # Ajustez UAT
+  IICS_LOGIN_URL: https://dm-em.informaticacloud.com  # FIX: enlève []
+  IICS_DEV_POD_URL: https://dm-em.informaticacloud.com/saas
+  IICS_UAT_POD_URL: https://emw1.dm-em.informaticacloud.com/saas
 
 jobs:
   deploy-dev:
-    name: Test DEV
     runs-on: ubuntu-latest
     steps:
+      # VOTRE checkout (scripts CI/CD)
       - uses: actions/checkout@v4
+      
+      # ❌ NOUVEAU : Checkout iic_demo (contenu)
+      - name: Checkout iic_demo content
+        uses: actions/checkout@v4
+        with:
+          repository: marouanprojet-ux/iic_demo  # Repo devs
+          ref: ${{ inputs.commit_hash }}          # dev/main/tag
+          path: iic_demo
       
       - name: Setup Python
         uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
+        with: python-version: '3.9'
       
       - name: Install deps
         run: pip install requests
       
+      # FIX: Pod DEV
       - name: Auth DEV
         env:
           IICS_USERNAME: ${{ secrets.IICS_DEV_USERNAME }}
           IICS_PASSWORD: ${{ secrets.IICS_DEV_PASSWORD }}
           IICSPOD_URL: ${{ env.IICS_DEV_POD_URL }}
-          COMMITHASH: ${{ github.ref_name || inputs.commit_hash || github.sha }}
+          COMMITHASH: ${{ inputs.commit_hash || github.sha }}
         run: python iics_auth.py
       
+      # FIX: Working dir + pod
       - name: Deploy & Test DEV
+        working-directory: iic_demo  # ← Contenu devs
         env:
           IICSPOD_URL: ${{ env.IICS_DEV_POD_URL }}
-          COMMITHASH: ${{ github.ref_name || inputs.commit_hash || github.sha }}
-        run: python deploy_dev.py
+          COMMITHASH: ${{ inputs.commit_hash || github.sha }}
+        run: python ../deploy_dev.py  # Script parent
 
   deploy-uat:
-    name: Promo UAT
-    needs: deploy-dev  # Attend DEV OK
+    needs: deploy-dev
     runs-on: ubuntu-latest
     steps:
+      # Même pattern...
       - uses: actions/checkout@v4
-      
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Checkout iic_demo
+        uses: actions/checkout@v4
         with:
-          python-version: '3.9'
+          repository: marouanprojet-ux/iic_demo
+          ref: ${{ inputs.commit_hash }}
+          path: iic_demo
       
-      - name: Install deps
-        run: pip install requests
-      
-      - name: Auth UAT
-        env:
-          UAT_IICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
-          UAT_IICS_PASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
-          IICSPOD_URL: ${{ env.IICS_UAT_POD_URL }}
-          UATCOMMITHASH: ${{ github.ref_name || inputs.commit_hash || github.sha }}
-        run: python iics_auth.py
-      
+      # ... (identique auth/deploy_uat.py)
       - name: Deploy & Test UAT
+        working-directory: iic_demo
         env:
           IICSPOD_URL: ${{ env.IICS_UAT_POD_URL }}
-          UATCOMMITHASH: ${{ github.ref_name || inputs.commit_hash || github.sha }}
-        run: python deploy_uat.py
+          UATCOMMITHASH: ${{ inputs.commit_hash }}
+        run: python ../deploy_uat.py
