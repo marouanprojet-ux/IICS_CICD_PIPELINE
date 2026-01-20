@@ -24,6 +24,8 @@ jobs:
     steps:
       - name: Checkout pipeline repo
         uses: actions/checkout@v4
+        with:
+          repository: marouanprojet-ux/IICS_CICD_PIPELINE
 
       - name: Checkout iic_demo
         uses: actions/checkout@v4
@@ -33,8 +35,7 @@ jobs:
           path: iic_demo
           fetch-depth: 1
 
-      - name: Compute commit hash from iic_demo
-        id: gethash
+      - name: Compute iic_demo commit hash
         run: |
           cd iic_demo
           echo "COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
@@ -48,7 +49,7 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
-      - name: Authenticate to IICS
+      - name: Authenticate to IICS (DEV)
         env:
           IICS_USERNAME: ${{ secrets.IICS_DEV_USERNAME }}
           IICS_PASSWORD: ${{ secrets.IICS_DEV_PASSWORD }}
@@ -56,9 +57,10 @@ jobs:
           IICS_POD_URL: ${{ env.IICS_POD_URL }}
         run: python scripts/iics_auth.py
 
-      - name: Deploy DEV (use iic_demo commit hash)
+      - name: Deploy DEV
         env:
           sessionId: ${{ env.sessionId }}
-          IICS_POD_URL: ${{ env.IICS_POD_URL }}
-          COMMIT_HASH: ${{ env.COMMIT_HASH }}
+          # ✅ Ton deploy_dev.py actuel attend ces deux variables (d'après l'erreur)
+          IICSPOD_URL: ${{ env.IICS_POD_URL }}
+          COMMITHASH: ${{ env.COMMIT_HASH }}
         run: python scripts/deploy_dev.py
