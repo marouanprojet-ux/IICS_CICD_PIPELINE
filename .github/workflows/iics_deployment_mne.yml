@@ -5,9 +5,13 @@ on:
     branches: [ main ]
   workflow_dispatch:
     inputs:
+      commit_hash:
+        description: 'Commit hash IDMC à déployer (laissez vide = dernier commit dev)'
+        required: false
+        type: string
       branch:
-        description: 'Branch iic_demo à déployer'
-        required: true
+        description: 'Branch iic_demo (si commit_hash vide)'
+        required: false
         default: 'dev'
         type: string
 
@@ -22,13 +26,14 @@ jobs:
     name: Validate DEV (contrôle deploy)
     runs-on: ubuntu-latest
     outputs:
-      commit_hash: ${{ steps.hash.outputs.hash }}
+      commit_hash: ${{ steps.get_hash.outputs.hash }}
       
     steps:
       - name: Checkout Pipeline
         uses: actions/checkout@v4
 
       - name: Checkout iic_demo
+        if: ${{ github.event.inputs.commit_hash == '' }}
         uses: actions/checkout@v4
         with:
           repository: marouanprojet-ux/iic_demo
@@ -36,12 +41,17 @@ jobs:
           path: iic_demo
 
       - name: Get commit hash
-        id: hash
+        id: get_hash
         run: |
-          cd iic_demo
-          HASH=$(git rev-parse HEAD)
+          if [ -n "${{ github.event.inputs.commit_hash }}" ]; then
+            HASH="${{ github.event.inputs.commit_hash }}"
+            echo "📌 Hash fourni: $HASH"
+          else
+            cd iic_demo
+            HASH=$(git rev-parse HEAD)
+            echo "📌 Hash branch dev: $HASH"
+          fi
           echo "hash=$HASH" >> $GITHUB_OUTPUT
-          echo "✅ Commit: $HASH"
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -57,33 +67,47 @@ jobs:
           IICS_LOGIN_URL: ${{ env.IICS_LOGIN_URL }}
         run: python scripts/iics_auth.py
 
-      # ✅ CONTRÔLE : Vérifier commit tag IDMC contient "deploy"
-      - name: Vérifier commit tag "deploy" dans IDMC
+      # ✅ CONTRÔLE : Vérifier commit existe + tag "deploy"
+      - name: Vérifier commit IDMC + tag "deploy"
         env:
           sessionId: ${{ env.sessionId }}
           POD_URL: ${{ env.IICS_DEV_POD_URL }}
-          COMMIT: ${{ steps.hash.outputs.hash }}
+          COMMIT_HASH: ${{ steps.get_hash.outputs.hash }}
         run: |
-          # Récupérer dernier commit IDMC
-          RESP=$(curl -sS -X GET "$POD_URL/public/core/v3/sourceControlAction" \
+          echo "🔍 Vérification commit $COMMIT_HASH dans IDMC DEV..."
+          
+          # GET /commit/{hash} pour récupérer détails
+          RESP=$(curl -sS -w "\n%{http_code}" -X GET "$POD_URL/public/core/v3/commit/$COMMIT_HASH" \
             -H "INFA-SESSION-ID: $sessionId" \
             -H "Accept: application/json")
           
-          # Extraire dernier commit tag
-          TAG=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('items',[{}])[0].get('commitTag',''))")
+          STATUS=$(echo "$RESP" | tail -n1)
+          BODY=$(echo "$RESP" | head -n-1)
           
-          echo "📌 Dernier commit tag IDMC: $TAG"
-          
-          # Vérifier "deploy" présent
-          if [[ ! "$TAG" =~ deploy ]]; then
-            echo "❌ ABORT: Commit tag doit contenir 'deploy'"
-            echo "   Actuel: '$TAG'"
+          if [[ "$STATUS" != "200" ]]; then
+            echo "❌ ABORT: Commit $COMMIT_HASH introuvable dans IDMC DEV"
+            echo "   Détails: $BODY"
+            echo "   → Faites Check-in + Push + Pull dans IDMC DEV"
             exit 1
           fi
           
-          echo "✅ Tag OK: '$TAG' contient 'deploy'"
+          # Extraire commitMessage (contient tag)
+          TAG=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('commitMessage',''))")
+          
+          echo "📌 Commit trouvé: $COMMIT_HASH"
+          echo "📌 Message/Tag IDMC: '$TAG'"
+          
+          # Vérifier "deploy" présent
+          if [[ ! "$TAG" =~ deploy ]]; then
+            echo "❌ ABORT: Commit message doit contenir 'deploy'"
+            echo "   Actuel: '$TAG'"
+            echo "   → Check-in avec Commit Tag contenant 'deploy'"
+            exit 1
+          fi
+          
+          echo "✅ Commit validé : message contient 'deploy'"
 
-  # ========== JOB 2 : Deploy UAT ==========
+  # ========== JOB 2 : Deploy UAT (KB Informatica Method) ==========
   deploy_uat:
     name: Deploy to UAT
     needs: validate_dev
@@ -108,8 +132,8 @@ jobs:
           IICS_LOGIN_URL: ${{ env.IICS_LOGIN_URL }}
         run: python scripts/iics_auth.py
 
-      # Pull commit DEV → UAT via API
-      - name: Pull commit to UAT
+      # 🚀 Deploy via pullByCommitHash (KB Informatica)
+      - name: Pull commit to UAT (pullByCommitHash)
         env:
           sessionId: ${{ env.sessionId }}
           POD_URL: ${{ env.IICS_UAT_POD_URL }}
@@ -117,6 +141,7 @@ jobs:
         run: |
           echo "🚀 Deploy commit $COMMIT_HASH vers UAT..."
           
+          # POST /pullByCommitHash
           RESP=$(curl -sS -w "\n%{http_code}" -X POST "$POD_URL/public/core/v3/pullByCommitHash" \
             -H "INFA-SESSION-ID: $sessionId" \
             -H "Content-Type: application/json" \
@@ -128,11 +153,115 @@ jobs:
           if [[ "$STATUS" == "200" || "$STATUS" == "202" ]]; then
             echo "✅ Pull lancé vers UAT"
             echo "$BODY"
+            
+            # Extraire pullActionId
+            PULL_ID=$(echo "$BODY" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('pullActionId',''))")
+            echo "PULL_ACTION_ID=$PULL_ID" >> $GITHUB_ENV
           else
             echo "❌ Erreur pull UAT: $STATUS"
             echo "$BODY"
             exit 1
           fi
 
+      # 🔄 Attendre fin Pull UAT
+      - name: Wait for UAT pull completion
+        env:
+          sessionId: ${{ env.sessionId }}
+          POD_URL: ${{ env.IICS_UAT_POD_URL }}
+          PULL_ACTION_ID: ${{ env.PULL_ACTION_ID }}
+        run: |
+          echo "⏳ Attente fin pull UAT (ID: $PULL_ACTION_ID)..."
+          
+          STATE="IN_PROGRESS"
+          RETRY=0
+          MAX_RETRY=20
+          
+          while [[ "$STATE" == "IN_PROGRESS" && $RETRY -lt $MAX_RETRY ]]; do
+            sleep 10
+            RETRY=$((RETRY+1))
+            
+            RESP=$(curl -sS -X GET "$POD_URL/public/core/v3/sourceControlAction/$PULL_ACTION_ID" \
+              -H "INFA-SESSION-ID: $sessionId")
+            
+            STATE=$(echo "$RESP" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('status',{}).get('state',''))")
+            echo "📊 Pull status: $STATE (tentative $RETRY/$MAX_RETRY)"
+          done
+          
+          if [[ "$STATE" != "SUCCESSFUL" ]]; then
+            echo "❌ Pull UAT échoué: $STATE"
+            exit 1
+          fi
+          
+          echo "✅ Pull UAT terminé avec succès !"
+
+      # ✅ Test Mapping Tasks (optionnel - KB Informatica)
+      - name: Test Mapping Tasks UAT (optionnel)
+        if: false  # Mettre 'true' pour activer tests auto
+        env:
+          sessionId: ${{ env.sessionId }}
+          POD_URL: ${{ env.IICS_UAT_POD_URL }}
+          COMMIT_HASH: ${{ needs.validate_dev.outputs.commit_hash }}
+        run: |
+          echo "🧪 Test Mapping Tasks commit $COMMIT_HASH..."
+          
+          # GET /commit/{hash} pour lister objets
+          RESP=$(curl -sS -X GET "$POD_URL/public/core/v3/commit/$COMMIT_HASH" \
+            -H "INFA-SESSION-ID: $sessionId")
+          
+          # Extraire Mapping Tasks (type=MTT)
+          python3 << 'PYEOF'
+          import json, os, sys, requests, time
+          
+          resp = json.loads('''$RESP''')
+          tasks = [x for x in resp.get('changes', []) if x.get('type') == 'MTT']
+          
+          if not tasks:
+              print("ℹ️  Aucun Mapping Task à tester")
+              sys.exit(0)
+          
+          pod = os.environ['POD_URL']
+          session = os.environ['sessionId']
+          headers = {'INFA-SESSION-ID': session, 'Content-Type': 'application/json'}
+          
+          for task in tasks:
+              task_id = task.get('appContextId')
+              task_name = task.get('name', task_id)
+              
+              print(f"🧪 Test: {task_name}")
+              
+              # Run job
+              body = {'type': 'job', 'taskId': task_id, 'taskType': 'MTT'}
+              r = requests.post(f"{pod}/api/v2/job", headers=headers, json=body)
+              
+              if r.status_code != 200:
+                  print(f"❌ Échec démarrage: {r.text}")
+                  sys.exit(1)
+              
+              run_id = r.json().get('runId')
+              
+              # Wait for completion
+              state = 0
+              retry = 0
+              while state == 0 and retry < 30:
+                  time.sleep(10)
+                  retry += 1
+                  a = requests.get(f"{pod}/api/v2/activity/activityLog?runId={run_id}&taskId={task_id}", headers=headers)
+                  logs = a.json()
+                  if logs:
+                      state = logs[0].get('state', 0)
+              
+              if state != 1:
+                  print(f"❌ {task_name} échoué (state={state})")
+                  sys.exit(1)
+              
+              print(f"✅ {task_name} OK")
+          
+          print("✅ Tous les tests UAT OK !")
+          PYEOF
+
       - name: Success
-        run: echo "🎉 Deploy DEV → UAT terminé !"
+        run: |
+          echo "🎉 =========================================="
+          echo "🎉 Deploy DEV → UAT terminé avec succès !"
+          echo "🎉 Commit: ${{ needs.validate_dev.outputs.commit_hash }}"
+          echo "🎉 =========================================="
