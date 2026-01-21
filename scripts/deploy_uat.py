@@ -3,28 +3,28 @@ import sys
 from iics_client import IICSClient
 
 def main():
-    uat_commit_hash = os.environ.get('UATCOMMITHASH')  # ✅ OK
+    uat_commit_hash = os.environ.get('UATCOMMITHASH')
     
-    # ✅ CORRECTION : Ligne 11
-    pod_url = os.environ.get('IICSPOD_URL')  # ← Ajouté underscore
+    # ✅ FIXÉ : IICSPOD_URL → IICS_POD_URL
+    pod_url = os.environ.get('IICS_POD_URL')
     
-    session_id = os.environ.get('uatsessionId')  # ✅ OK
+    session_id = os.environ.get('uatsessionId')
     
     if not uat_commit_hash:
-        print("UATCOMMITHASH environment variable is required.")  # ✅ OK
-    # ✅ CORRECTION : Ligne 18
+        print("UATCOMMITHASH environment variable is required.")
+        sys.exit(1)
     if not pod_url:
-        print("IICSPOD_URL environment variable is required.")  # ← Underscore
-        
+        print("IICS_POD_URL environment variable is required.")
+        sys.exit(1)
     if not session_id:
         print("uatsessionId environment variable is required.")
+        sys.exit(1)
         
     client = IICSClient(pod_url=pod_url, session_id=session_id)
     
     try:
-        client.pull_by_commit(uat_commit_hash)  # ✅ OK
-        
-        objects = client.get_commit_objects(uat_commit_hash, resource_type_filter='MTT')  # ✅ OK
+        client.pull_by_commit(uat_commit_hash)
+        objects = client.get_commit_objects(uat_commit_hash, resource_type_filter='MTT')
         
         for obj in objects:
             app_context_id = obj.get('appContextId')
@@ -38,6 +38,7 @@ def main():
         sys.exit(1)
         
     client.logout()
+    print("✅ UAT Deploy SUCCESS")
 
 if __name__ == "__main__":
     main()
