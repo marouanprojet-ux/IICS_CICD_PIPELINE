@@ -1,6 +1,7 @@
 name: Validate DEV Deploy
 
 on:
+  workflow_dispatch:        # ← BOUTON RUN WORKFLOW !
   push:
     branches: [ dev ]
 
@@ -19,8 +20,7 @@ jobs:
         ref: dev
         path: iic_demo
         
-    - name: Get hash
-      id: hash
+    - id: hash
       run: |
         cd iic_demo
         echo "hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
@@ -31,14 +31,13 @@ jobs:
         
     - run: pip install requests
     
-    - name: Auth
-      id: auth
+    - id: auth
       env:
         IICS_USERNAME: ${{ secrets.IICS_USERNAME }}
         IICS_PASSWORD: ${{ secrets.IICS_PASSWORD }}
       run: python scripts/iics_auth.py
       
-    - name: Skip IDMC Check
-      run: |
-        echo "✅ SKIP IDMC - Hash ${{ steps.hash.outputs.hash }}"
-        echo "🎉 READY FOR UAT"
+    - run: |
+        echo "✅ IDMC CHECK SKIPPED"
+        echo "Hash: ${{ steps.hash.outputs.hash }}"
+        echo "🎉 READY UAT"
