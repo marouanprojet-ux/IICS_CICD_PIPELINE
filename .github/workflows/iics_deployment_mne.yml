@@ -1,4 +1,4 @@
-name: IICS CICD - Validate DEV (Skip Check)
+name: IICS CICD - Validate DEV (Skip Check )
 
 on:
   push:
