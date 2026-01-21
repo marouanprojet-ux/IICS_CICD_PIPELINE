@@ -1,13 +1,15 @@
-name: Validate DEV Deploy
+name: DEV → UAT Pipeline
 
 on:
-  workflow_dispatch:        # ← BOUTON RUN WORKFLOW !
+  workflow_dispatch:
   push:
     branches: [ dev ]
 
 jobs:
-  validate:
+  validate-dev:
     runs-on: ubuntu-latest
+    outputs:
+      hash: ${{ steps.commit.outputs.hash }}
     
     steps:
     - uses: actions/checkout@v4
@@ -20,7 +22,7 @@ jobs:
         ref: dev
         path: iic_demo
         
-    - id: hash
+    - id: commit
       run: |
         cd iic_demo
         echo "hash=$(git rev-parse HEAD)" >> $GITHUB_OUTPUT
@@ -38,6 +40,30 @@ jobs:
       run: python scripts/iics_auth.py
       
     - run: |
-        echo "✅ IDMC CHECK SKIPPED"
-        echo "Hash: ${{ steps.hash.outputs.hash }}"
-        echo "🎉 READY UAT"
+        echo "✅ DEV Hash: ${{ steps.commit.outputs.hash }}"
+        echo "🎯 Skip IDMC → UAT READY"
+
+  deploy-uat:
+    name: 🚀 Deploy UAT
+    needs: validate-dev
+    runs-on: ubuntu-latest
+    environment: uat
+    
+    steps:
+    - uses: actions/checkout@v4
+      
+    - uses: actions/setup-python@v5
+      with:
+        python-version: 3.9
+        
+    - run: pip install requests
+      
+    - name: UAT Auth & Deploy
+      env:
+        COMMIT_HASH: ${{ needs.validate-dev.outputs.hash }}
+        IICS_USERNAME: ${{ secrets.UAT_USERNAME }}
+        IICS_PASSWORD: ${{ secrets.UAT_PASSWORD }}
+        IICS_UAT_POD_URL: https://emw1.dm-em.informaticacloud.com/saas
+      run: |
+        echo "🚀 UAT Deploy: $COMMIT_HASH"
+        python scripts/deploy_uat.py
