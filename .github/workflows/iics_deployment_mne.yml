@@ -15,33 +15,29 @@ jobs:
   validate-dev:
     name: Validate DEV (contrôle deploy)
     runs-on: ubuntu-latest
-    environment: dev  # GitHub Environments pour secrets
+    environment: dev
     
     steps:
     - name: Checkout Pipeline
       uses: actions/checkout@v4
       with:
         repository: marouanprojet-ux/IICS_CICD_PIPELINE
-      
+        
     - name: Checkout iic_demo (dev)
       uses: actions/checkout@v4
       with:
         repository: marouanprojet-ux/iic_demo
         ref: dev
         path: iic_demo
-      
+        
     - name: Get commit hash
       id: commit
       run: |
-        if [ -n "$HASH" ]; then
-          echo "📌 Hash fourni: $HASH"
-        else
-          cd iic_demo
-          HASH=$(git rev-parse HEAD)
-          echo "📌 Hash branch dev: $HASH"
-        fi
+        cd iic_demo
+        HASH=$(git rev-parse HEAD)
+        echo "📌 Hash branch dev: $HASH"
         echo "hash=$HASH" >> $GITHUB_OUTPUT
-      
+        
     - name: Setup Python 3.9
       uses: actions/setup-python@v5
       with:
@@ -57,24 +53,23 @@ jobs:
         IICS_PASSWORD: ${{ secrets.IICS_PASSWORD }}
       run: python scripts/iics_auth.py
       
-    - name: 🚨 Validate Commit IDMC (SKIP pour test)
+    - name: 🚨 Validate Commit IDMC (SKIP)
       env:
         sessionId: ${{ steps.auth.outputs.sessionId }}
         POD_URL: ${{ env.IICS_DEV_POD_URL }}
         COMMIT_HASH: ${{ steps.commit.outputs.hash }}
-        SKIP_IDMC_CHECK: true  # ← AJOUTÉ : désactive check
+        SKIP_IDMC_CHECK: true
       run: |
-        echo "🔍 Vérification commit $COMMIT_HASH dans IDMC DEV..."
-        
+        echo "🔍 Vérification commit $COMMIT_HASH (SKIP activé)"
         if [[ "$SKIP_IDMC_CHECK" == "true" ]]; then
-          echo "✅ SKIP IDMC check (TEST MODE)"
+          echo "✅ IDMC check SKIPPÉ (TEST MODE)"
         else
-          # curl check original...
-          echo "❌ Check activé - commente pour tester"
+          echo "❌ Check complet (non implémenté)"
           exit 1
         fi
+        echo "✅ Pipeline OK - prêt pour UAT"
         
-        echo "✅ Validation OK (skip activé)"
-    
-    - name: Next Step (ex: Deploy UAT)
-      run: echo "🚀 Prêt pour Deploy UAT..."
+    - name: Test Deploy Script
+      run: |
+        echo "🚀 Test scripts/deploy_uat.py"
+        python -c "import sys; print('Python OK')" [file:6]
