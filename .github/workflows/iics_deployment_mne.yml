@@ -65,21 +65,28 @@ jobs:
     - name: Authenticate UAT
       id: auth-uat
       env:
-        # Credentials DEV (pour sessionId)
+        # Credentials DEV (optionnel - peut être vide)
         IICS_USERNAME: ${{ secrets.IICS_USERNAME }}
         IICS_PASSWORD: ${{ secrets.IICS_PASSWORD }}
-        # Credentials UAT (pour uatsessionId)
+        # Credentials UAT (OBLIGATOIRE)
         UATIICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
         UATIICSPASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
         IICS_LOGIN_URL: https://dm-em.informaticacloud.com
-        GITHUB_ENV: ${{ runner.temp }}/github_env  # ← Force GITHUB_ENV
       run: |
         echo "🔐 Connexion à l'UAT..."
         echo "DEBUG: IICS_USERNAME=${{ secrets.IICS_USERNAME != '' && 'SET' || 'EMPTY' }}"
         echo "DEBUG: UATIICS_USERNAME=${{ secrets.UAT_IICS_USERNAME != '' && 'SET' || 'EMPTY' }}"
         python scripts/iics_auth.py
         echo "DEBUG: Contents of GITHUB_ENV:"
-        cat ${{ runner.temp }}/github_env || echo "No env file created"
+        cat $GITHUB_ENV || echo "No env file created"
+        # Lecture du sessionId depuis GITHUB_ENV
+        if [ -f "$GITHUB_ENV" ]; then
+          source $GITHUB_ENV
+          echo "uat_session=$uat_sessionId" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Échec: GITHUB_ENV vide"
+          exit 1
+        fi
 
     - name: Execute UAT Deployment
       env:
@@ -87,13 +94,13 @@ jobs:
         UATCOMMITHASH: ${{ needs.validate-dev.outputs.hash }}
         # URL du POD UAT (Secret)
         IICS_POD_URL: ${{ secrets.IICS_UAT_POD_URL }}
-        # Charge GITHUB_ENV du script précédent
-        uatsessionId: ${{ fromJson(needs.validate-dev.outputs.hash) }}
+        # Session ID de l'étape précédente
+        uatsessionId: ${{ steps.auth-uat.outputs.uat_session }}
       run: |
         echo "🚀 Démarrage du déploiement UAT..."
         echo "Commit: $UATCOMMITHASH"
         echo "Pod URL: $IICS_POD_URL"
-        echo "uatsessionId: '$uatsessionId'"
+        echo "DEBUG: uatsessionId='$uatsessionId'"
         # Exécution du script de déploiement
         python scripts/deploy_uat.py
         echo "✅ Déploiement UAT terminé avec succès !"
