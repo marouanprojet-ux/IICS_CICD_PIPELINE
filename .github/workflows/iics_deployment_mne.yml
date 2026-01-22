@@ -19,30 +19,30 @@ jobs:
     outputs:
       hash: ${{ steps.hash.outputs.hash }}
     steps:
-    - name: Checkout Pipeline Repo
-      uses: actions/checkout@v4
-      with:
-        repository: marouanprojet-ux/IICS_CICD_PIPELINE
+      - name: Checkout Pipeline Repo
+        uses: actions/checkout@v4
+        with:
+          repository: marouanprojet-ux/IICS_CICD_PIPELINE
 
-    - name: Checkout Code Repo (iic_demo)
-      uses: actions/checkout@v4
-      with:
-        repository: marouanprojet-ux/iic_demo
-        ref: dev
-        path: iic_demo
+      - name: Checkout Code Repo (iic_demo)
+        uses: actions/checkout@v4
+        with:
+          repository: marouanprojet-ux/iic_demo
+          ref: dev
+          path: iic_demo
 
-    - name: Get Commit Hash
-      id: hash
-      run: |
-        cd iic_demo
-        HASH=$(git rev-parse HEAD)
-        echo "📌 GitHub Hash: $HASH"
-        echo "hash=$HASH" >> $GITHUB_OUTPUT
+      - name: Get Commit Hash
+        id: hash
+        run: |
+          cd iic_demo
+          HASH=$(git rev-parse HEAD)
+          echo "📌 GitHub Hash: $HASH"
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
 
-    - name: 🚨 Skip IDMC Validation
-      run: |
-        echo "✅ Validation IDMC skippée (Mode Test)"
-        echo "Le hash ${{ steps.hash.outputs.hash }} est prêt pour l'UAT."
+      - name: 🚨 Skip IDMC Validation
+        run: |
+          echo "✅ Validation IDMC skippée (Mode Test)"
+          echo "Le hash ${{ steps.hash.outputs.hash }} est prêt pour l'UAT."
 
   # JOB 2 : Déploiement UAT (Vrai déploiement)
   deploy-uat:
@@ -51,56 +51,79 @@ jobs:
     runs-on: ubuntu-latest
     environment: uat
     steps:
-    - name: Checkout Pipeline Repo
-      uses: actions/checkout@v4
+      - name: Checkout Pipeline Repo
+        uses: actions/checkout@v4
 
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: 3.9
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.9
 
-    - name: Install Dependencies
-      run: pip install requests
+      - name: Install Dependencies
+        run: pip install requests
 
-    - name: Authenticate UAT
-      id: auth-uat
-      env:
-        # Credentials DEV (optionnel - peut être vide)
-        IICS_USERNAME: ${{ secrets.IICS_USERNAME }}
-        IICS_PASSWORD: ${{ secrets.IICS_PASSWORD }}
-        # Credentials UAT (OBLIGATOIRE)
-        UATIICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
-        UATIICSPASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
-        IICS_LOGIN_URL: https://dm-em.informaticacloud.com
-      run: |
-        echo "🔐 Connexion à l'UAT..."
-        echo "DEBUG: IICS_USERNAME=${{ secrets.IICS_USERNAME != '' && 'SET' || 'EMPTY' }}"
-        echo "DEBUG: UATIICS_USERNAME=${{ secrets.UAT_IICS_USERNAME != '' && 'SET' || 'EMPTY' }}"
-        python scripts/iics_auth.py
-        echo "DEBUG: Contents of GITHUB_ENV:"
-        cat $GITHUB_ENV || echo "No env file created"
-        # Lecture du sessionId depuis GITHUB_ENV
-        if [ -f "$GITHUB_ENV" ]; then
+      - name: Authenticate UAT
+        id: auth-uat
+        env:
+          # Credentials DEV (optionnel, mais le script tente le login DEV en premier)
+          IICS_USERNAME: ${{ secrets.IICS_USERNAME }}
+          IICS_PASSWORD: ${{ secrets.IICS_PASSWORD }}
+          
+          # Credentials UAT - CORRECTION ICI (Ajout des underscores pour matcher iics_auth.py)
+          UAT_IICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
+          UAT_IICS_PASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
+          
+          IICS_LOGIN_URL: https://dm-em.informaticacloud.com
+        run: |
+          echo "🔐 Connexion à l'UAT..."
+          
+          # DIAGNOSTIC SÉCURISÉ (Vérifie la présence des variables sans afficher les secrets)
+          echo "--- DEBUG VARIABLES ---"
+          echo "UAT_IICS_USERNAME longueur: ${#UAT_IICS_USERNAME}"
+          if [ -n "$UAT_IICS_USERNAME" ]; then echo "STATUS: User UAT défini."; else echo "STATUS: User UAT VIDE !"; fi
+          echo "-----------------------"
+
+          # Exécution du script d'auth
+          python scripts/iics_auth.py
+          
+          # Vérification du fichier environnement généré par Python
+          echo "DEBUG: Vérification GITHUB_ENV..."
+          if [ ! -f "$GITHUB_ENV" ]; then
+            echo "❌ ERREUR CRITIQUE: Le fichier GITHUB_ENV n'a pas été créé par le script Python."
+            exit 1
+          fi
+
+          # Lecture et export du sessionId pour l'étape suivante
           source $GITHUB_ENV
+          if [ -z "$uat_sessionId" ]; then
+             echo "❌ ERREUR: Login UAT échoué (uat_sessionId est vide)."
+             echo "Vérifiez vos identifiants UAT ou l'URL de login."
+             exit 1
+          fi
+          
+          echo "✅ Session ID récupéré."
           echo "uat_session=$uat_sessionId" >> $GITHUB_OUTPUT
-        else
-          echo "❌ Échec: GITHUB_ENV vide"
-          exit 1
-        fi
 
-    - name: Execute UAT Deployment
-      env:
-        # Récupération du Hash du Job 1
-        UATCOMMITHASH: ${{ needs.validate-dev.outputs.hash }}
-        # URL du POD UAT (Secret)
-        IICS_POD_URL: ${{ secrets.IICS_UAT_POD_URL }}
-        # Session ID de l'étape précédente
-        uatsessionId: ${{ steps.auth-uat.outputs.uat_session }}
-      run: |
-        echo "🚀 Démarrage du déploiement UAT..."
-        echo "Commit: $UATCOMMITHASH"
-        echo "Pod URL: $IICS_POD_URL"
-        echo "DEBUG: uatsessionId='$uatsessionId'"
-        # Exécution du script de déploiement
-        python scripts/deploy_uat.py
-        echo "✅ Déploiement UAT terminé avec succès !"
+      - name: Execute UAT Deployment
+        env:
+          # Récupération du Hash du Job 1
+          UATCOMMITHASH: ${{ needs.validate-dev.outputs.hash }}
+          # URL du POD UAT (Secret)
+          IICS_POD_URL: ${{ secrets.IICS_UAT_POD_URL }}
+          # Session ID récupéré de l'étape précédente (via outputs)
+          uatsessionId: ${{ steps.auth-uat.outputs.uat_session }}
+        run: |
+          echo "🚀 Démarrage du déploiement UAT..."
+          echo "Commit: $UATCOMMITHASH"
+          echo "Pod URL: $IICS_POD_URL"
+          
+          # Vérification finale avant lancement
+          if [ -z "$uatsessionId" ]; then
+            echo "❌ ERREUR: uatsessionId est vide au moment du déploiement."
+            exit 1
+          fi
+          
+          # Exécution du script de déploiement
+          python scripts/deploy_uat.py
+          
+          echo "✅ Déploiement UAT terminé avec succès !"
