@@ -3,7 +3,7 @@ name: IICS CICD - Validate & Deploy UAT
 on:
   push:
     branches: [ dev ]
-  workflow_dispatch:  # Permet le lancement manuel via bouton
+  workflow_dispatch: # Permet le lancement manuel via bouton
 
 env:
   # URLs standard Informatica
@@ -18,20 +18,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       hash: ${{ steps.hash.outputs.hash }}
-    
     steps:
     - name: Checkout Pipeline Repo
       uses: actions/checkout@v4
       with:
         repository: marouanprojet-ux/IICS_CICD_PIPELINE
-        
+
     - name: Checkout Code Repo (iic_demo)
       uses: actions/checkout@v4
       with:
         repository: marouanprojet-ux/iic_demo
         ref: dev
         path: iic_demo
-        
+
     - name: Get Commit Hash
       id: hash
       run: |
@@ -39,11 +38,11 @@ jobs:
         HASH=$(git rev-parse HEAD)
         echo "📌 GitHub Hash: $HASH"
         echo "hash=$HASH" >> $GITHUB_OUTPUT
-        
+
     - name: 🚨 Skip IDMC Validation
       run: |
         echo "✅ Validation IDMC skippée (Mode Test)"
-        echo "Le hash $HASH est prêt pour l'UAT."
+        echo "Le hash ${{ steps.hash.outputs.hash }} est prêt pour l'UAT."
 
   # JOB 2 : Déploiement UAT (Vrai déploiement)
   deploy-uat:
@@ -51,46 +50,44 @@ jobs:
     needs: validate-dev
     runs-on: ubuntu-latest
     environment: uat
-    
     steps:
     - name: Checkout Pipeline Repo
       uses: actions/checkout@v4
-      
+
     - name: Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: 3.9
-        
+
     - name: Install Dependencies
       run: pip install requests
-      
+
     - name: Authenticate UAT
       id: auth-uat
       env:
-        # Utilisation de vos secrets UAT exacts
-        IICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
-        IICS_PASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
+        # Credentials DEV (pour sessionId)
+        IICS_USERNAME: ${{ secrets.IICS_USERNAME }}
+        IICS_PASSWORD: ${{ secrets.IICS_PASSWORD }}
+        # Credentials UAT (pour uatsessionId)
+        UATIICS_USERNAME: ${{ secrets.UAT_IICS_USERNAME }}
+        UATIICSPASSWORD: ${{ secrets.UAT_IICS_PASSWORD }}
         IICS_LOGIN_URL: https://dm-em.informaticacloud.com
       run: |
         echo "🔐 Connexion à l'UAT..."
         python scripts/iics_auth.py
-    
+
     - name: Execute UAT Deployment
       env:
         # Récupération du Hash du Job 1
         UATCOMMITHASH: ${{ needs.validate-dev.outputs.hash }}
-        
         # URL du POD UAT (Secret)
         IICS_POD_URL: ${{ secrets.IICS_UAT_POD_URL }}
-        
-        # Session ID généré par l'étape précédente
+        # Session ID généré par l'étape précédente (via GITHUB_ENV)
         uatsessionId: ${{ steps.auth-uat.outputs.sessionId }}
       run: |
         echo "🚀 Démarrage du déploiement UAT..."
         echo "Commit: $UATCOMMITHASH"
         echo "Pod URL: $IICS_POD_URL"
-        
         # Exécution du script de déploiement
         python scripts/deploy_uat.py
-        
         echo "✅ Déploiement UAT terminé avec succès !"
